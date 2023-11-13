@@ -1,6 +1,8 @@
 #ifndef EASYJSON_H__
 #define EASYJSON_H__
 
+#include <stddef.h> /* size_t */
+
 typedef enum{
     EASYJSON_NULL, 
     EASYJSON_FALSE, 
@@ -20,10 +22,17 @@ enum{
 };
 
 typedef struct{
-    double n;
+    union 
+    {
+        double n;
+        struct 
+        { 
+            char* s; 
+            size_t len; 
+        }s;
+    };
     easyjson_type type;
 }easyjson_value;
-
 
 int easyjson_parse(easyjson_value* v, const char* json);
 

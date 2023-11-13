@@ -1,9 +1,35 @@
 #include "easyjson.h"
 #include <assert.h>  /* assert() */
-#include <stdlib.h>  /* NULL */
-#include <string.h>
+#include <stdlib.h>  /* NULL strtod() */
+#include <errno.h>   /* errno, ERANGE */
+#include <math.h>    /* HUGE_VAL */
+
 
 #define EXPECT(c, ch) do { assert(*c->json == (ch)); c->json++; } while(0)
+#define ISDIGIT(ch)         ((ch) >= '0' && (ch) <= '9')
+#define ISDIGIT1TO9(ch)     ((ch) >= '1' && (ch) <= '9')
+#define EXPECTDIGITSTR(p) \
+    do\
+    {\
+        if (!ISDIGIT(*p)) \
+            return EASYJSON_PARSE_INVALID_VALUE;\
+        for (p++; ISDIGIT(*p); p++);\
+    }\
+    while(0);
+#define EXPECTZEROORNOTZEROSTARTEDDIGITSTR(p) \
+    do\
+    {\
+        if(*p == '0')\
+        {\
+            p++;\
+        }\
+        else\
+        {\
+            EXPECTDIGITSTR(p);\
+        }\
+    }\
+    while(0);
+
 
 typedef struct{
     const char * json;
@@ -32,21 +58,47 @@ static int easyjson_parse_literal(easyjson_context* c, easyjson_value* v)
 }
 
 static int easyjson_parse_number(easyjson_context* c, easyjson_value* v) 
-{
-    //开头不允许“+”，和“.”
-    if(c->json[0] == '+' || c->json[0] == '.')
-        return EASYJSON_PARSE_INVALID_VALUE;
+{   
+    //p指针用于检测传进来的字符串
+    const char* p = c->json;
+    //不能是'+'号
+    if(*p == '-')
+        p++;
     
-    char* end = NULL;
-    /* \TODO validate number */
-    v->n = strtod(c->json, &end);
-    //取结尾字符
-    char last_char = c->json[strlen(c->json)-1];
-    //结尾字符不能为"."
-    if (last_char == '.')
-        return EASYJSON_PARSE_INVALID_VALUE;
-
-    c->json = end;
+    //要么是'0'， 要么是非0开头的数字串
+    if(*p == '0')
+    {
+        p++;
+    }
+    else
+    {
+        if (!ISDIGIT1TO9(*p)) 
+            return EASYJSON_PARSE_INVALID_VALUE;
+        for (p++; ISDIGIT(*p); p++);
+    }
+    //小数
+    if(*p == '.')
+    {
+        p++;
+        if (!ISDIGIT(*p)) 
+            return EASYJSON_PARSE_INVALID_VALUE;
+        for (p++; ISDIGIT(*p); p++);
+    }
+    //指数
+    if(*p == 'E' || *p == 'e')
+    {
+        p++;
+        if(*p == '+' || *p == '-')
+            p++;
+        if (!ISDIGIT(*p)) 
+            return EASYJSON_PARSE_INVALID_VALUE;
+        for (p++; ISDIGIT(*p); p++);
+    }
+    errno = 0;
+    v->n = strtod(c->json, NULL);
+    if (errno == ERANGE && (v->n == HUGE_VAL || v->n == -HUGE_VAL))
+        return EASYJSON_PARSE_NUMBER_TOO_BIG;
+    c->json = p;
     v->type = EASYJSON_NUMBER;
     return EASYJSON_PARSE_OK;
 }
@@ -93,7 +145,10 @@ int easyjson_parse(easyjson_value* v, const char* json)
     {
         easyjson_parse_whitespace(&c);
         if(*c.json != '\0')
+        {
+            v->type = EASYJSON_NULL;
             ret = EASYJSON_PARSE_ROOT_NOT_SINGULAR;
+        }
     }
     return ret;
 }
