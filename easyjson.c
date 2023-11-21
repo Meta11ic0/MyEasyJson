@@ -5,9 +5,18 @@
 #include <math.h>    /* HUGE_VAL */
 
 
-#define EXPECT(c, ch) do { assert(*c->json == (ch)); c->json++; } while(0)
+#define EXPECT(c, ch)       do { assert(*c->json == (ch)); c->json++; } while(0)
 #define ISDIGIT(ch)         ((ch) >= '0' && (ch) <= '9')
 #define ISDIGIT1TO9(ch)     ((ch) >= '1' && (ch) <= '9')
+#define PUTC(c, ch)         do { *(char*)easyjson_context_push(c, sizeof(char)) = (ch); } while(0)
+
+#define easyjson_init(v)    do { (v)->type = EASYJSON_NULL; } while(0)
+#define easyjson_set_null(v) easyjson_free(v)
+
+#ifndef EASYJSON_PARSE_STACK_INIT_SIZE
+#define EASYJSON_PARSE_STACK_INIT_SIZE 256
+#endif
+
 #define EXPECTDIGITSTR(p) \
     do\
     {\
@@ -16,6 +25,7 @@
         for (p++; ISDIGIT(*p); p++);\
     }\
     while(0);
+
 #define EXPECTZEROORNOTZEROSTARTEDDIGITSTR(p) \
     do\
     {\
@@ -30,10 +40,77 @@
     }\
     while(0);
 
-
 typedef struct{
     const char * json;
+    char* stack;
+    size_t size, top;
 }easyjson_context;
+
+static void* easyjson_context_push(easyjson_context* c, size_t size) 
+{
+    void* ret;
+    assert(size > 0);
+    if (c->top + size >= c->size) {
+        if (c->size == 0)
+            c->size = EASYJSON_PARSE_STACK_INIT_SIZE;
+        while (c->top + size >= c->size)
+            c->size += c->size >> 1;  /* c->size * 1.5 */
+        c->stack = (char*)realloc(c->stack, c->size);
+    }
+    ret = c->stack + c->top;
+    c->top += size;
+    return ret;
+}
+
+static void* easyjson_context_pop(easyjson_context* c, size_t size) 
+{
+    assert(c->top >= size);
+    return c->stack + (c->top -= size);
+}
+
+void easyjson_free(easyjson_value* v) 
+{
+    assert(v != NULL);
+    if (v->type == EASYJSON_STRING)
+        free(v->s.s);
+    v->type = EASYJSON_NULL;
+}
+
+void easyjson_set_string(easyjson_value* v, const char* s, size_t len)
+{
+    assert(v != NULL && (s != NULL || len == 0));
+    easyjson_free(v);
+    v->s.s = (char*)malloc(len + 1);
+    memcpy(v->s.s, s, len);
+    v->s.s[len] = '\0';
+    v->s.len = len;
+    v->type = EASYJSON_STRING;
+}
+
+static int easyjson_parse_string(easyjson_context* c, easyjson_value* v) 
+{
+    size_t head = c->top, len;
+    const char* p;
+    EXPECT(c, '\"');
+    p = c->json;
+    for (;;) 
+    {
+        char ch = *p++;
+        switch (ch) 
+        {
+            case '\"':
+                len = c->top - head;
+                easyjson_set_string(v, (const char*)easyjson_context_pop(c, len), len);
+                c->json = p;
+                return EASYJSON_PARSE_OK;
+            case '\0':
+                c->top = head;
+                return EASYJSON_PARSE_MISS_QUOTATION_MARK;
+            default:
+                PUTC(c, ch);
+        }
+    }
+}
 
 static int easyjson_parse_literal(easyjson_context* c, easyjson_value* v) 
 {
@@ -111,20 +188,21 @@ static void easyjson_parse_whitespace(easyjson_context* c)
     c->json = p;
 }
 
-static int easyjson_parse_value(easyjson_context* c, easyjson_value* v) 
-{
-    switch (*c->json) 
-    {
-        case 'n':case 't':case 'f':  return easyjson_parse_literal(c, v);
-        case '\0': return EASYJSON_PARSE_EXPECT_VALUE;
-        default:   return easyjson_parse_number(c, v);
-    }
-}
-
 easyjson_type easyjson_get_type(const easyjson_value* v)
-{    
+{
     assert(v != NULL);
     return v->type;
+}
+
+int easyjson_get_boolean(const easyjson_value* v)
+{
+    /* \TODO */
+    return 0;
+}
+
+void easyjson_set_boolean(easyjson_value* v, int b)
+{
+    /* \TODO */
 }
 
 double easyjson_get_number(const easyjson_value* v)
@@ -133,13 +211,54 @@ double easyjson_get_number(const easyjson_value* v)
     return v->n;
 }
 
+void easyjson_set_number(easyjson_value* v, double n)
+{
+    /* \TODO */
+}
+
+const char* easyjson_get_string(const easyjson_value* v) 
+{
+    assert(v != NULL && v->type == EASYJSON_STRING);
+    return v->s.s;
+}
+
+size_t easyjson_get_string_length(const easyjson_value* v) 
+{
+    assert(v != NULL && v->type == EASYJSON_STRING);
+    return v->s.len;
+}
+
+void easyjson_set_string(easyjson_value* v, const char* s, size_t len)
+{
+    assert(v != NULL && (s != NULL || len == 0));
+    easyjson_free(v);
+    v->s.s = (char*)malloc(len + 1);
+    memcpy(v->s.s, s, len);
+    v->s.s[len] = '\0';
+    v->s.len = len;
+    v->type = EASYJSON_STRING;
+}
+
+static int easyjson_parse_value(easyjson_context* c, easyjson_value* v) 
+{
+    switch (*c->json) 
+    {
+        case 'n':case 't':case 'f':  return easyjson_parse_literal(c, v);
+        case '"' :easyjson_parse_string(c, v);
+        case '\0': return EASYJSON_PARSE_EXPECT_VALUE;
+        default:   return easyjson_parse_number(c, v);
+    }
+}
+
 int easyjson_parse(easyjson_value* v, const char* json)
 {
     easyjson_context c;
-    int ret = EASYJSON_PARSE_INVALID_VALUE;
+    int ret;
     assert(v != NULL);
     c.json = json;
-    v->type = EASYJSON_NULL;
+    c.stack = NULL;        /* <- */
+    c.size = c.top = 0;    /* <- */
+    easyjson_init(v);
     easyjson_parse_whitespace(&c);
     if((ret = easyjson_parse_value(&c, v)) == EASYJSON_PARSE_OK)
     {
@@ -150,6 +269,8 @@ int easyjson_parse(easyjson_value* v, const char* json)
             ret = EASYJSON_PARSE_ROOT_NOT_SINGULAR;
         }
     }
+    assert(c.top == 0);    /* <- */
+    free(c.stack);         /* <- */
     return ret;
 }
 
