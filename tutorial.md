@@ -13,3 +13,27 @@ JSON is a language-independent data format. It was derived from JavaScript, but 
 到了英文学习时间，很简单一个长句，意思是说json是一种公开的文件标准和数据交换格式，用于存储和发送人类可读的（对比二进制码，人类不可读）数据对象，数据对象由“属性-值对”（类似于map）和数组（或者其他可以序列化的值）组合而成。这是一种很常见的数据格式，被广泛应用在电子数据交换上，包括WEB应用和服务器之间的数据交换。
 
 JSON是一种语言独立的数据格式。它从JavaScript分离出来，但是很多现代的编程语言都有代码去生成和解析JSON格式的数据。JSON文件拓展名字使用 **.json**.
+
+
+下面是一些JSON格式的数据样例
+~~~
+{
+  "name": "John Doe",
+  "age": 30,
+  "city": "New York",
+  "isStudent": false,
+  "grades": [85, 90, 78]
+}
+~~~
+
+~~~
+[
+  {"name": "Alice", "age": 25, "city": "London"},
+  {"username": "user123", "email": "user123@example.com"},
+  {"status": "active", "timestamp": 1638631200},
+  {"location": {"latitude": 40.7128, "longitude": -74.0060}},
+  {"data": [1, 2, 3, 4, 5]},
+  {"text": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."},
+  {"values": {"a": true, "b": null, "c": ["x", "y", "z"]}}
+]
+~~~
